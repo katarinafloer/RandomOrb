@@ -35,7 +35,10 @@ n   = 100
 # ── 1. BASELINE DATA (n=100) ──────────────────────────────────────────────────
 GPA             = rng.normal(3.3, 0.4, n).clip(2.0, 4.0)
 parental_income = rng.normal(65,  25,  n).clip(15, 150)
-internship      = (rng.random(n) < 0.5).astype(float)   # ~50% had internship
+# Internship probability increases with parental income (realistic: wealthier
+# families have more connections). Creates visible multicollinearity with X3.
+p_internship = 1 / (1 + np.exp(-(parental_income - 65) / 18))
+internship   = (rng.random(n) < p_internship).astype(float)
 
 def r(a, b): return np.corrcoef(a, b)[0, 1]
 
@@ -130,16 +133,34 @@ R_base, R_top = 1.2, 2.8
 imp_vals = np.array([importance[nm] for nm in names])
 R_orbs   = R_base + (imp_vals / imp_vals.max()) * (R_top - R_base)
 
-# Enforce overlap: each X orb must reach Y's orb
+# Enforce overlap 1: each X orb must overlap Y's orb
 R_Y = R_orbs[names.index('Y')]
 for i, nm in enumerate(names):
     if nm in ('Y', 'Yh'):
         continue
-    pt = var_pts[nm]
-    dist_to_Y = float(np.linalg.norm(pt - pY))
-    min_r = max(0.5, dist_to_Y - R_Y + 0.4)   # 0.4 = guaranteed visible overlap
+    dist_to_Y = float(np.linalg.norm(var_pts[nm] - pY))
+    min_r = max(0.5, dist_to_Y - R_Y + 0.4)
     if R_orbs[i] < min_r:
         R_orbs[i] = min_r
+
+# Enforce overlap 2: correlated X pairs must also overlap each other.
+# Multicollinearity (X-X correlation) should be visible as orb intersection.
+x_names = ['X1', 'X2', 'X3']
+x_vars  = {'X1': internship, 'X2': GPA, 'X3': parental_income}
+OVERLAP_THRESHOLD = 0.25   # show overlap for |r| > this
+for ni in x_names:
+    for nj in x_names:
+        if nj <= ni:
+            continue
+        rij = abs(r(x_vars[ni], x_vars[nj]))
+        if rij > OVERLAP_THRESHOLD:
+            dist_ij      = float(np.linalg.norm(var_pts[ni] - var_pts[nj]))
+            needed_sum   = dist_ij + 0.3 + 0.5 * rij   # more correlation → more overlap
+            current_sum  = R_orbs[names.index(ni)] + R_orbs[names.index(nj)]
+            if current_sum < needed_sum:
+                bump = (needed_sum - current_sum) / 2   # split deficit evenly
+                R_orbs[names.index(ni)] += bump
+                R_orbs[names.index(nj)] += bump
 
 orb_r = dict(zip(names, R_orbs))
 print("\nOrb radii (partial R² + overlap guarantee):")
