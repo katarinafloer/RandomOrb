@@ -203,7 +203,8 @@ SZ = mid[2] + RHO*(np.cos(PHI)*f1[2]+np.sin(PHI)*f2[2]) + warp*norm_vec[2]
 # ── 7. STUDENT COORDINATES (for real-study panel) ────────────────────────────
 stu_raw  = U_b[:, :3] * S_b[:3]
 stu_norm = max(np.linalg.norm(s) for s in stu_raw)
-stu_pts  = stu_raw / stu_norm * L * 0.55   # scaled to sit near orb cluster
+# Scale students to spread within the smallest orb, centred on the orb cluster
+stu_pts  = stu_raw / stu_norm * min(orb_r.values()) * 0.75 + orb_centroid
 
 vars_for_balance = {'X1': internship, 'X2': GPA, 'X3': parental_income,
                     'Y': job_score, 'Yh': Y_hat}
