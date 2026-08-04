@@ -244,7 +244,12 @@ ax.text(*(pYh - np.array([0,0,0.8])), f'Ŷ   fitted  (R²={R2:.2f})',
         color='#ffb74d', fontsize=8.5, fontfamily='monospace')
 ax.text(*(pYh + res*0.55), 'e', color='#ef5350', fontsize=9, fontfamily='monospace')
 
-# Styling
+# Styling — force equal axis ranges so spheres look spherical
+max_val = max(abs(c) for pt in var_pts.values() for c in pt) + max(orb_r.values())
+ax.set_xlim(-max_val, max_val)
+ax.set_ylim(-max_val, max_val)
+ax.set_zlim(-max_val, max_val)
+ax.set_box_aspect([1, 1, 1])
 ax.set_xlabel('PC 1', color='#444', labelpad=6)
 ax.set_ylabel('PC 2', color='#444', labelpad=6)
 ax.set_zlabel('PC 3', color='#444', labelpad=6)
