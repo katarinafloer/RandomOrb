@@ -84,93 +84,110 @@ print(f"  e ⊥ X1: dot = {np.dot(residual, v1):.6f}  (≈ 0 ✓)")
 print(f"  e ⊥ X2: dot = {np.dot(residual, v2):.6f}  (≈ 0 ✓)")
 
 # ── 6. VISUALISE ─────────────────────────────────────────────────────────────
+#
+# Key idea: normalise all vectors to the same display length L.
+# Place an orb of radius R at each tip.
+# Distance between two tips = L * sqrt(2 - 2*r_ij), so overlap is driven purely
+# by correlation: high r → tips close → orbs overlap a lot.
+#
+L = 3.5          # display length for all vectors
+R = 2.0          # orb radius — chosen so pairs with r~0.3 still visibly overlap
+
+u1  = v1  / np.linalg.norm(v1)   # unit vectors (direction only)
+u2  = v2  / np.linalg.norm(v2)
+uY  = vY  / np.linalg.norm(vY)
+uYh = vY_hat / np.linalg.norm(vY_hat)
+
+p1  = L * u1    # orb centres = vector tips at display length
+p2  = L * u2
+pY  = L * uY
+pYh = L * uYh
+
 fig = plt.figure(figsize=(11, 9), facecolor='#0e0e1a')
 ax  = fig.add_subplot(111, projection='3d', facecolor='#0e0e1a')
 
-# --- helper: draw an arrow from origin ---------------------------------
-def arrow(v, color, lw=2.5, ls='-'):
-    ax.quiver(0, 0, 0, v[0], v[1], v[2],
+# --- helper: arrow from origin to point --------------------------------
+def arrow(tip, color, lw=2.5, ls='-'):
+    ax.quiver(0, 0, 0, tip[0], tip[1], tip[2],
               color=color, linewidth=lw, linestyle=ls,
-              arrow_length_ratio=0.12)
+              arrow_length_ratio=0.10)
 
-# --- helper: draw a transparent sphere centred at the ORIGIN -----------
-# radius = std dev of the variable (= length of its vector)
-# All vectors emanate from origin, so orbs overlap wherever variables correlate.
-def orb(std_dev, color, alpha=0.13):
-    u, w = np.mgrid[0:2*np.pi:35j, 0:np.pi:25j]
-    r = std_dev
-    xs = r * np.cos(u) * np.sin(w)
-    ys = r * np.sin(u) * np.sin(w)
-    zs = r * np.cos(w)
+# --- helper: orb centred at a point ------------------------------------
+def orb(centre, color, alpha=0.15):
+    u, w = np.mgrid[0:2*np.pi:40j, 0:np.pi:30j]
+    xs = centre[0] + R * np.cos(u) * np.sin(w)
+    ys = centre[1] + R * np.sin(u) * np.sin(w)
+    zs = centre[2] + R * np.cos(w)
     ax.plot_surface(xs, ys, zs, color=color, alpha=alpha, linewidth=0)
 
-# --- regression plane (spanned by e1, e2) ------------------------------
-lim = max(s1, s2, sy) * 1.3
-ss = np.linspace(-lim, lim, 12)
-tt = np.linspace(-lim, lim, 12)
+# --- regression plane in unit-vector space -----------------------------
+lim = L * 1.4
+ss = np.linspace(-lim, lim, 14)
+tt = np.linspace(-lim, lim, 14)
 S, T = np.meshgrid(ss, tt)
-PX = S*e1[0] + T*e2[0]
-PY = S*e1[1] + T*e2[1]
-PZ = S*e1[2] + T*e2[2]
-ax.plot_surface(PX, PY, PZ, alpha=0.10, color='#4466dd', linewidth=0)
-ax.plot_wireframe(PX, PY, PZ, alpha=0.08, color='#6688ff', linewidth=0.4)
+PX = S*u1[0] + T*(u2 - np.dot(u2,u1)*u1)[0] / np.linalg.norm(u2 - np.dot(u2,u1)*u1)
+PY_p = S*u1[1] + T*(u2 - np.dot(u2,u1)*u1)[1] / np.linalg.norm(u2 - np.dot(u2,u1)*u1)
+PZ = S*u1[2] + T*(u2 - np.dot(u2,u1)*u1)[2] / np.linalg.norm(u2 - np.dot(u2,u1)*u1)
+ax.plot_surface(PX, PY_p, PZ, alpha=0.08, color='#4466dd', linewidth=0)
+ax.plot_wireframe(PX, PY_p, PZ, alpha=0.06, color='#6688ff', linewidth=0.4)
 
-# --- draw vectors -------------------------------------------------------
-arrow(v1,       '#4fc3f7', lw=3)          # X1 internship — blue
-arrow(v2,       '#81c784', lw=3)          # X2 GPA        — green
-arrow(vY,       '#fff176', lw=3)          # Y job score   — yellow
-arrow(vY_hat,   '#ffb74d', lw=2, ls='--') # Ŷ projection  — orange dashed
+# --- three orbs — centred at each vector tip ---------------------------
+# Draw Y first (behind), then X1, X2 in front
+orb(pY,  '#fff176', alpha=0.12)   # Y  — yellow
+orb(p2,  '#81c784', alpha=0.14)   # X2 — green
+orb(p1,  '#4fc3f7', alpha=0.14)   # X1 — blue
 
-# residual from tip of vY_hat to tip of vY
-ax.quiver(vY_hat[0], vY_hat[1], vY_hat[2],
-          residual[0], residual[1], residual[2],
+# --- arrows -------------------------------------------------------------
+arrow(p1,  '#4fc3f7', lw=3)
+arrow(p2,  '#81c784', lw=3)
+arrow(pY,  '#fff176', lw=3)
+arrow(pYh, '#ffb74d', lw=2, ls='--')   # Ŷ projection
+
+# residual arrow: from pYh tip to pY tip
+res_disp = pY - pYh
+ax.quiver(pYh[0], pYh[1], pYh[2],
+          res_disp[0], res_disp[1], res_disp[2],
           color='#ef5350', linewidth=1.8, linestyle=':',
           arrow_length_ratio=0.18)
 
-# right-angle marker at projection point (3 line segments)
-tick = 0.12
-perp_a = tick * e1
-perp_b = tick * (residual / np.linalg.norm(residual))
-p0, p1, p2 = vY_hat, vY_hat + perp_a, vY_hat + perp_b
-corner_pts = np.array([p1, p1 + perp_b, p2])
+# right-angle tick at projection foot
+f_e1 = u1
+f_e2 = (u2 - np.dot(u2,u1)*u1); f_e2 /= np.linalg.norm(f_e2)
+res_dir = res_disp / np.linalg.norm(res_disp)
+tick = 0.18
+corner_pts = np.array([pYh + tick*f_e1,
+                        pYh + tick*f_e1 + tick*res_dir,
+                        pYh + tick*res_dir])
 ax.plot(corner_pts[:,0], corner_pts[:,1], corner_pts[:,2],
-        color='#ef5350', linewidth=1, alpha=0.7)
-
-# --- orbs centred at origin, radius = std dev ---------------------------
-# Overlap between orbs = shared variance = correlation between variables.
-# Draw Y last so it renders on top (most visible).
-orb(s1, '#4fc3f7', alpha=0.13)   # X1 internship
-orb(s2, '#81c784', alpha=0.13)   # X2 GPA
-orb(sy, '#fff176', alpha=0.10)   # Y  job score (largest, outermost)
+        color='#ef5350', linewidth=1, alpha=0.6)
 
 # --- labels -------------------------------------------------------------
-def label(v, txt, color, offset=(0.05, 0.05, 0.05)):
-    ax.text(v[0]+offset[0], v[1]+offset[1], v[2]+offset[2],
-            txt, color=color, fontsize=11, fontweight='bold',
-            fontfamily='monospace')
-
-label(v1,     'X₁\nInternship', '#4fc3f7')
-label(v2,     'X₂\nGPA',        '#81c784')
-label(vY,     'Y\nJob Score',   '#fff176')
-label(vY_hat, 'Ŷ (fitted)',     '#ffb74d', offset=(0.05, 0.05, -0.15))
-mid = vY_hat + residual*0.55
-label(mid,    'e  (⊥ plane)',   '#ef5350', offset=(0.05,0,0))
+off = 0.25
+ax.text(*(p1 + off), 'X₁\nInternship', color='#4fc3f7',
+        fontsize=11, fontweight='bold', fontfamily='monospace')
+ax.text(*(p2 + off), 'X₂\nGPA',        color='#81c784',
+        fontsize=11, fontweight='bold', fontfamily='monospace')
+ax.text(*(pY + off), 'Y\nJob Score',   color='#fff176',
+        fontsize=11, fontweight='bold', fontfamily='monospace')
+ax.text(*(pYh - np.array([0,0,0.4])),  'Ŷ',  color='#ffb74d',
+        fontsize=10, fontfamily='monospace')
+ax.text(*(pYh + res_disp*0.55 + np.array([0.1,0,0])), 'e (⊥)',
+        color='#ef5350', fontsize=9, fontfamily='monospace')
 
 # --- axes & styling -----------------------------------------------------
-ax.set_xlabel('Dim 1', color='#888', labelpad=8)
-ax.set_ylabel('Dim 2', color='#888', labelpad=8)
-ax.set_zlabel('Dim 3', color='#888', labelpad=8)
-ax.tick_params(colors='#555')
+ax.set_xlabel('Dim 1', color='#666', labelpad=8)
+ax.set_ylabel('Dim 2', color='#666', labelpad=8)
+ax.set_zlabel('Dim 3', color='#666', labelpad=8)
+ax.tick_params(colors='#444')
 for pane in [ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane]:
     pane.fill = False
-    pane.set_edgecolor('#222244')
-ax.grid(True, color='#222244', linewidth=0.5)
+    pane.set_edgecolor('#1a1a33')
+ax.grid(True, color='#1a1a33', linewidth=0.5)
 ax.set_title(f'Vector Geometry of Regression  (R² = {R_squared:.3f})',
              color='white', fontsize=13, pad=14)
 
-# --- annotation box -----------------------------------------------------
-info = (f"r(X₁,X₂) = {r12:.2f}   r(Y,X₁) = {ry1:.2f}   r(Y,X₂) = {ry2:.2f}\n"
-        f"Orb overlap ∝ correlation  |  e ⊥ both X vectors by construction")
+info = (f"r(X₁,X₂)={r12:.2f}   r(Y,X₁)={ry1:.2f}   r(Y,X₂)={ry2:.2f}\n"
+        f"Orb centres = vector tips (normalised).  Overlap ∝ correlation.")
 fig.text(0.5, 0.02, info, ha='center', color='#aaaacc', fontsize=9,
          fontfamily='monospace',
          bbox=dict(boxstyle='round', facecolor='#111133', alpha=0.7, edgecolor='#333366'))
