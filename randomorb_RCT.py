@@ -122,6 +122,15 @@ var_exp  = (S**2) / np.sum(S**2)
 coords   = U[:, :3] * S[:3]
 c_Y, c_Yh, c_X1, c_X2, c_X3 = coords
 
+# ── STUDENT COORDINATES IN THE SAME 3D SPACE ─────────────────────────────────
+# In the SVD  V = U S Wt, the rows of Wt are the PC directions in R^10.
+# Projecting student i (a unit basis vector e_i) onto PC k gives Wt[k, i].
+# So each student's 3D position = Wt[:3, i] — they live in the same space
+# as the variable orbs but closer to the origin (inside the orb cluster).
+student_raw = Wt[:3, :].T                          # shape (10, 3)
+max_norm    = max(np.linalg.norm(r) for r in student_raw)
+student_pts = student_raw / max_norm * 3.5 * 0.55  # scale to sit inside orbs (L=3.5)
+
 print(f"\n── PCA quality ────────────────────────────────────")
 print(f"  3D captures {sum(var_exp[:3]):.1%} of inter-variable structure")
 
@@ -211,6 +220,20 @@ for pt, nm in zip(all_pts, ['X₁ (treatment)','X₂ (GPA)      ',
     bar_t = '█'*int(frac*20);  bar_c = '░'*(20-int(frac*20))
     print(f"  {nm}  T|{bar_t}{bar_c}|C  {frac:.0%}T / {1-frac:.0%}C")
 
+
+# ── STUDENT POINTS ───────────────────────────────────────────────────────────
+# Each dot is one student, positioned in the same 3D PCA space as the orbs.
+# Teal = Treatment arm, coral = Control arm (from matched-pair randomization).
+# Drop lines connect each student to the "floor" (z = min) so depth is readable.
+z_floor = student_pts[:, 2].min() - 0.3
+for i, (pt, t) in enumerate(zip(student_pts, treatment)):
+    color = '#80cbc4' if t else '#ef9a9a'
+    ax.scatter(*pt, color=color, s=80, zorder=5, edgecolors='white', linewidths=0.5)
+    ax.text(pt[0]+0.08, pt[1]+0.08, pt[2]+0.08, f'S{i+1}',
+            color=color, fontsize=7, fontfamily='monospace', alpha=0.85)
+    # drop line to floor
+    ax.plot([pt[0], pt[0]], [pt[1], pt[1]], [pt[2], z_floor],
+            color=color, linewidth=0.4, alpha=0.3)
 
 # ── ORBS ─────────────────────────────────────────────────────────────────────
 orb(pY,  '#fff176', alpha=0.11)   # Y  outcome        — yellow
