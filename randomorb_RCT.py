@@ -157,52 +157,65 @@ def orb(centre, color, alpha=0.13):
 
 
 # --- RANDOMIZATION DISC ------------------------------------------------
-# This disc is perpendicular to X1 (the treatment direction).
-# It represents the "cut" that divides the sample into two arms:
-#   orbs on the X1 side  → TREATMENT arm (dot product with X1 direction > 0)
-#   orbs on the other side → CONTROL arm
+# The disc is perpendicular to X1 and positioned so it passes THROUGH all
+# orbs — every variable has part of its orb on the treatment side and part
+# on the control side. This reflects the RCT goal: every covariate and the
+# outcome should be split across both arms.
 #
-# In an RCT we want X2 and X3 to straddle this disc evenly (land ON the disc,
-# meaning zero correlation with treatment). Here, because the data is
-# observational, X2 and X3 lean toward the treatment side — that's confounding.
-#
-# We draw the disc as a filled circle in the plane perpendicular to u1.
-# Two basis vectors for that plane via Gram-Schmidt:
+# To find the right offset along u1: each orb i is centred at p_i and has
+# radius R. The disc at offset d along u1 intersects orb i when
+#   |dot(p_i, u1_disp) - d| < R
+# We pick d = midpoint of [max(lower bounds), min(upper bounds)] across all orbs.
 
 u1_disp = p1 / np.linalg.norm(p1)   # unit vector in X1 display direction
+
+all_pts = [p1, p2, p3, pY, pYh]
+projs   = [np.dot(pt, u1_disp) for pt in all_pts]  # projection of each orb centre onto X1
+
+lo = max(proj - R for proj in projs)   # latest a disc can start and still clip every orb
+hi = min(proj + R for proj in projs)   # earliest it must stop
+d  = (lo + hi) / 2                     # sweet spot: slices through all orbs
+print(f"\n  Randomization plane offset along X1: {d:.2f}  (range [{lo:.2f}, {hi:.2f}])")
+
+plane_origin = d * u1_disp   # the plane passes through this point
+
+# Two basis vectors for the plane via Gram-Schmidt
 arb = np.array([0, 1, 0]) if abs(u1_disp[1]) < 0.9 else np.array([1, 0, 0])
 f1 = arb - np.dot(arb, u1_disp) * u1_disp;  f1 /= np.linalg.norm(f1)
 f2 = np.cross(u1_disp, f1);                  f2 /= np.linalg.norm(f2)
 
-# Parametric disc: polar coords (rho, phi) → 3D point on the plane
-disc_r = L * 1.45    # disc radius — large enough to slice through all orbs
+# Parametric disc centred at plane_origin
+disc_r = R * 2.8
 rhos = np.linspace(0, disc_r, 30)
 phis = np.linspace(0, 2*np.pi, 60)
 RHO, PHI = np.meshgrid(rhos, phis)
-DX = RHO * (np.cos(PHI)*f1[0] + np.sin(PHI)*f2[0])
-DY = RHO * (np.cos(PHI)*f1[1] + np.sin(PHI)*f2[1])
-DZ = RHO * (np.cos(PHI)*f1[2] + np.sin(PHI)*f2[2])
-ax.plot_surface(DX, DY, DZ, alpha=0.13, color='#b0bec5', linewidth=0)
+DX = plane_origin[0] + RHO * (np.cos(PHI)*f1[0] + np.sin(PHI)*f2[0])
+DY = plane_origin[1] + RHO * (np.cos(PHI)*f1[1] + np.sin(PHI)*f2[1])
+DZ = plane_origin[2] + RHO * (np.cos(PHI)*f1[2] + np.sin(PHI)*f2[2])
+ax.plot_surface(DX, DY, DZ, alpha=0.18, color='#b0bec5', linewidth=0)
 
-# Disc edge (circle outline)
+# Disc edge
 phi_ring = np.linspace(0, 2*np.pi, 120)
-ring = disc_r * (np.outer(np.cos(phi_ring), f1) + np.outer(np.sin(phi_ring), f2))
-ax.plot(ring[:,0], ring[:,1], ring[:,2], color='#90a4ae', linewidth=1.2, alpha=0.6)
+ring = (plane_origin +
+        disc_r * (np.outer(np.cos(phi_ring), f1) + np.outer(np.sin(phi_ring), f2)))
+ax.plot(ring[:,0], ring[:,1], ring[:,2], color='#90a4ae', linewidth=1.5, alpha=0.7)
 
-# Label the two arms
-# Treatment side: along +u1_disp direction from the disc
-t_label_pos  =  u1_disp * (disc_r * 0.5) + f1 * disc_r * 0.6
-c_label_pos  = -u1_disp * (disc_r * 0.5) + f1 * disc_r * 0.6
-ax.text(*t_label_pos, 'TREATMENT\n    arm →', color='#80cbc4',
-        fontsize=8, fontfamily='monospace', alpha=0.9)
-ax.text(*c_label_pos, '← CONTROL\n      arm',  color='#ef9a9a',
-        fontsize=8, fontfamily='monospace', alpha=0.9)
+# Label the two sides — treatment is in the direction of larger X1 projection
+t_label_pos = plane_origin + u1_disp * (R * 1.2) + f1 * disc_r * 0.7
+c_label_pos = plane_origin - u1_disp * (R * 1.2) + f1 * disc_r * 0.7
+ax.text(*t_label_pos, 'TREATMENT →', color='#80cbc4', fontsize=8,
+        fontfamily='monospace', alpha=0.9)
+ax.text(*c_label_pos, '← CONTROL',   color='#ef9a9a', fontsize=8,
+        fontfamily='monospace', alpha=0.9)
 
-# Annotate which orbs are on which side by checking dot product with u1_disp.
-# Any orb centre with dot > 0 is on the treatment side of the disc.
-for pt, name in [(p1,'X₁'),(p2,'X₂'),(p3,'X₃'),(pY,'Y'),(pYh,'Ŷ')]:
-    side = '→T' if np.dot(pt, u1_disp) > 0 else '→C'
-    print(f"  {name}: dot with X₁ direction = {np.dot(pt/np.linalg.norm(pt), u1_disp):.2f}  {side}")
+# Print how much of each orb falls on each side (fraction > 0.5 = more on that side)
+print("  Fraction of each orb on treatment side (>0.5 = leans treatment):")
+for pt, name in zip(all_pts, ['X₁','X₂','X₃','Y ','Ŷ ']):
+    proj_dist = np.dot(pt, u1_disp) - d   # signed distance from plane
+    # fraction of sphere volume beyond the plane: 0.5 + 3/4*(x - x^3/3) for x=proj_dist/R
+    x = np.clip(proj_dist / R, -1, 1)
+    frac = 0.5 + (3/4) * (x - x**3/3)
+    print(f"    {name}: {frac:.0%} treatment  /  {1-frac:.0%} control")
 
 # --- five orbs — one per variable --------------------------------------
 # Draw the bigger / background ones first so foreground renders on top.
