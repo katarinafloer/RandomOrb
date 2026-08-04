@@ -37,7 +37,7 @@ GPA            = np.array([3.8, 3.5, 3.9, 3.2, 2.8, 2.9, 3.5, 3.7, 2.5, 3.1])
 parental_income = np.array([95, 60, 110, 45, 40, 55, 80, 75, 35, 50], dtype=float)  # $k
 job_score      = (-52.4 + 24.8*internship + 29.1*GPA
                   + 0.08*parental_income   # small direct income effect
-                  + np.random.normal(0, 3, 10))
+                  + np.random.normal(0, 15, 10))  # large noise → Y and Ŷ visibly differ
 
 df = pd.DataFrame({
     'Internship':      internship,
