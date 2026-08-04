@@ -189,86 +189,128 @@ SX = mid[0] + RHO*(np.cos(PHI)*f1[0]+np.sin(PHI)*f2[0]) + warp*norm_vec[0]
 SY = mid[1] + RHO*(np.cos(PHI)*f1[1]+np.sin(PHI)*f2[1]) + warp*norm_vec[1]
 SZ = mid[2] + RHO*(np.cos(PHI)*f1[2]+np.sin(PHI)*f2[2]) + warp*norm_vec[2]
 
-# ── 7. PLOT ───────────────────────────────────────────────────────────────────
-fig = plt.figure(figsize=(12, 10), facecolor='#0e0e1a')
-ax  = fig.add_subplot(111, projection='3d', facecolor='#0e0e1a')
+# ── 7. STUDENT COORDINATES (for real-study panel) ────────────────────────────
+stu_raw  = U_b[:, :3] * S_b[:3]
+stu_norm = max(np.linalg.norm(s) for s in stu_raw)
+stu_pts  = stu_raw / stu_norm * L * 0.55   # scaled to sit near orb cluster
 
-COLORS = {'X1':'#4fc3f7', 'X2':'#81c784', 'X3':'#ce93d8', 'Y':'#fff176', 'Yh':'#ffb74d'}
+# Real surface: origin-centred, normal = actual mentorship direction in biplot
+ment_c   = mentorship - mentorship.mean()
+ment_dir = U_b[:, :3].T @ ment_c
+ment_dir = ment_dir / np.linalg.norm(ment_dir)
 
-def draw_orb(centre, color, radius, alpha=0.13):
+def make_surface(normal, centre, radius, warp_amp=0.3):
+    arb = np.array([0,1,0]) if abs(normal[1]) < 0.9 else np.array([1,0,0])
+    e1  = arb - np.dot(arb, normal)*normal;  e1 /= np.linalg.norm(e1)
+    e2  = np.cross(normal, e1);              e2 /= np.linalg.norm(e2)
+    rhos, phis = np.linspace(0, radius, 30), np.linspace(0, 2*np.pi, 60)
+    RHO, PHI   = np.meshgrid(rhos, phis)
+    warp = warp_amp * np.cos(2*PHI) * (RHO/radius)
+    SX = centre[0] + RHO*(np.cos(PHI)*e1[0]+np.sin(PHI)*e2[0]) + warp*normal[0]
+    SY = centre[1] + RHO*(np.cos(PHI)*e1[1]+np.sin(PHI)*e2[1]) + warp*normal[1]
+    SZ = centre[2] + RHO*(np.cos(PHI)*e1[2]+np.sin(PHI)*e2[2]) + warp*normal[2]
+    # ring
+    phi_r = np.linspace(0, 2*np.pi, 150)
+    ring  = (centre + radius*(np.outer(np.cos(phi_r),e1)+np.outer(np.sin(phi_r),e2))
+             + np.outer(warp_amp*np.cos(2*phi_r), normal))
+    return (SX, SY, SZ), ring, e1
+
+# ── 8. PLOT ───────────────────────────────────────────────────────────────────
+COLORS = {'X1':'#4fc3f7','X2':'#81c784','X3':'#ce93d8','Y':'#fff176','Yh':'#ffb74d'}
+res    = pY - pYh
+
+fig = plt.figure(figsize=(18, 9), facecolor='#0e0e1a')
+axes = [fig.add_subplot(121, projection='3d', facecolor='#0e0e1a'),
+        fig.add_subplot(122, projection='3d', facecolor='#0e0e1a')]
+
+def draw_orb(ax, centre, color, radius, alpha=0.13):
     u, w = np.mgrid[0:2*np.pi:40j, 0:np.pi:30j]
     ax.plot_surface(centre[0]+radius*np.cos(u)*np.sin(w),
                     centre[1]+radius*np.sin(u)*np.sin(w),
                     centre[2]+radius*np.cos(w),
                     color=color, alpha=alpha, linewidth=0)
 
-def draw_arrow(tip, color, lw=2.8, ls='-'):
-    ax.quiver(0,0,0, tip[0],tip[1],tip[2], color=color,
-              linewidth=lw, linestyle=ls, arrow_length_ratio=0.12)
+def draw_arrow(ax, tip, color, lw=2.5, ls='-'):
+    ax.quiver(0,0,0,tip[0],tip[1],tip[2],color=color,
+              linewidth=lw,linestyle=ls,arrow_length_ratio=0.12)
 
-# Draw orbs (size = std dev) and arrows
-for nm, pt in var_pts.items():
-    ls = '--' if nm == 'Yh' else '-'
-    draw_orb(pt, COLORS[nm], orb_r[nm])
-    draw_arrow(pt, COLORS[nm], ls=ls)
+def draw_labels(ax, off=0.25):
+    ax.text(*(p1+off), f'X₁  Internship\n    pR²={pR2["X1"]:.2f}', color='#4fc3f7', fontsize=8, fontweight='bold', fontfamily='monospace')
+    ax.text(*(p2+off), f'X₂  GPA\n    pR²={pR2["X2"]:.2f}',        color='#81c784', fontsize=8, fontweight='bold', fontfamily='monospace')
+    ax.text(*(p3+off), f'X₃  Parental $\n    pR²={pR2["X3"]:.2f}', color='#ce93d8', fontsize=8, fontweight='bold', fontfamily='monospace')
+    ax.text(*(pY+off),  'Y   Job Score',                             color='#fff176', fontsize=8, fontweight='bold', fontfamily='monospace')
+    ax.text(*(pYh - np.array([0,0,0.8])), f'Ŷ  (R²={R2:.2f})',     color='#ffb74d', fontsize=7.5, fontfamily='monospace')
+    ax.text(*(pYh + res*0.55), 'e', color='#ef5350', fontsize=9, fontfamily='monospace')
 
-# Residual  e = Y − Ŷ
-res = pY - pYh
-ax.quiver(*pYh, *res, color='#ef5350', lw=1.5, linestyle=':', arrow_length_ratio=0.2)
+def style_ax(ax, title):
+    max_val = max(abs(c) for pt in var_pts.values() for c in pt) + max(orb_r.values())
+    ax.set_xlim(-max_val, max_val); ax.set_ylim(-max_val, max_val); ax.set_zlim(-max_val, max_val)
+    ax.set_box_aspect([1,1,1])
+    ax.set_xlabel('PC 1', color='#444', labelpad=4)
+    ax.set_ylabel('PC 2', color='#444', labelpad=4)
+    ax.set_zlabel('PC 3', color='#444', labelpad=4)
+    ax.tick_params(colors='#333')
+    for pane in [ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane]:
+        pane.fill = False; pane.set_edgecolor('#1a1a33')
+    ax.grid(True, color='#1a1a33', linewidth=0.4)
+    ax.set_title(title, color='white', fontsize=10, pad=10)
 
-# Randomization surface
-ax.plot_surface(SX, SY, SZ, alpha=0.18, color='#b0bec5', linewidth=0)
-phi_r = np.linspace(0, 2*np.pi, 150)
-ring  = (mid + disc_r*(np.outer(np.cos(phi_r),f1) + np.outer(np.sin(phi_r),f2))
-         + np.outer(0.3*np.cos(2*phi_r), norm_vec))
-ax.plot(ring[:,0], ring[:,1], ring[:,2], color='#90a4ae', lw=1.8, alpha=0.9)
+for ax in axes:
+    for nm, pt in var_pts.items():
+        draw_orb(ax, pt, COLORS[nm], orb_r[nm])
+        draw_arrow(ax, pt, COLORS[nm], ls='--' if nm=='Yh' else '-')
+    ax.quiver(*pYh, *res, color='#ef5350', lw=1.5, linestyle=':', arrow_length_ratio=0.2)
+    draw_labels(ax)
 
-ax.text(*(mid + norm_vec*R_top*1.8 + f1*disc_r*0.55),
-        'MENTORSHIP\n(Treatment)', color='#80cbc4', fontsize=9,
-        fontfamily='monospace', fontweight='bold')
-ax.text(*(mid - norm_vec*R_top*1.8 + f1*disc_r*0.55),
-        'NO MENTORSHIP\n(Control)', color='#ef9a9a', fontsize=9,
-        fontfamily='monospace', fontweight='bold')
+# ── PANEL 1: Real study ───────────────────────────────────────────────────────
+ax1 = axes[0]
 
-# Labels — show std dev and partial R² where available
-off = 0.25
-ax.text(*(p1+off), f'X₁  Internship\n    pR²={pR2["X1"]:.2f}',
-        color='#4fc3f7', fontsize=9, fontweight='bold', fontfamily='monospace')
-ax.text(*(p2+off), f'X₂  GPA\n    pR²={pR2["X2"]:.2f}',
-        color='#81c784', fontsize=9, fontweight='bold', fontfamily='monospace')
-ax.text(*(p3+off), f'X₃  Parental $\n    pR²={pR2["X3"]:.2f}',
-        color='#ce93d8', fontsize=9, fontweight='bold', fontfamily='monospace')
-ax.text(*(pY+off), f'Y   Job Score',
-        color='#fff176', fontsize=9, fontweight='bold', fontfamily='monospace')
-ax.text(*(pYh - np.array([0,0,0.8])), f'Ŷ   fitted  (R²={R2:.2f})',
-        color='#ffb74d', fontsize=8.5, fontfamily='monospace')
-ax.text(*(pYh + res*0.55), 'e', color='#ef5350', fontsize=9, fontfamily='monospace')
+# Students as dots coloured by mentorship assignment
+for i, (pt, t) in enumerate(zip(stu_pts, mentorship)):
+    col = '#80cbc4' if t else '#ef9a9a'
+    ax1.scatter(*pt, color=col, s=25, zorder=5, edgecolors='none', alpha=0.8)
 
-# Styling — force equal axis ranges so spheres look spherical
-max_val = max(abs(c) for pt in var_pts.values() for c in pt) + max(orb_r.values())
-ax.set_xlim(-max_val, max_val)
-ax.set_ylim(-max_val, max_val)
-ax.set_zlim(-max_val, max_val)
-ax.set_box_aspect([1, 1, 1])
-ax.set_xlabel('PC 1', color='#444', labelpad=6)
-ax.set_ylabel('PC 2', color='#444', labelpad=6)
-ax.set_zlabel('PC 3', color='#444', labelpad=6)
-ax.tick_params(colors='#333')
-for pane in [ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane]:
-    pane.fill = False; pane.set_edgecolor('#1a1a33')
-ax.grid(True, color='#1a1a33', linewidth=0.5)
-ax.set_title(
-    f'Mentorship RCT  (n={n},  R²={R2:.3f},  3 PCs={sum(var_exp[:3]):.0%})\n'
-    f'Orb size = std dev  ·  Labels show partial R²  ·  Surface = randomization boundary',
-    color='white', fontsize=10, pad=12)
+# Surface through origin, normal = actual mentorship direction
+surf1, ring1, e1_r = make_surface(ment_dir, np.zeros(3), disc_r)
+ax1.plot_surface(*surf1, alpha=0.18, color='#b0bec5', linewidth=0)
+ax1.plot(ring1[:,0], ring1[:,1], ring1[:,2], color='#90a4ae', lw=1.5, alpha=0.8)
+ax1.text(*(ment_dir*disc_r*0.7 + e1_r*disc_r*0.55), 'Mentorship →', color='#80cbc4', fontsize=8, fontfamily='monospace', fontweight='bold')
+ax1.text(*(-ment_dir*disc_r*0.7 + e1_r*disc_r*0.55), '← Control',   color='#ef9a9a', fontsize=8, fontfamily='monospace', fontweight='bold')
 
-info = (f"r(mentorship, internship)={r(mentorship,internship):.3f}  "
-        f"r(mentorship, GPA)={r(mentorship,GPA):.3f}  "
-        f"r(mentorship, income)={r(mentorship,parental_income):.3f}  "
-        f"r(mentorship, Y)={r(mentorship,job_score):.3f}")
-fig.text(0.5, 0.01, info, ha='center', color='#aaaacc', fontsize=8,
-         fontfamily='monospace',
-         bbox=dict(boxstyle='round', facecolor='#111133', alpha=0.7, edgecolor='#333366'))
+style_ax(ax1,
+    f'Real study  (n={n})\n'
+    f'Students shown · Surface through origin · Actual balance')
+
+# Balance stats
+bal = (f"r(T,X₁)={r(mentorship,internship):.3f}  r(T,X₂)={r(mentorship,GPA):.3f}  "
+       f"r(T,X₃)={r(mentorship,parental_income):.3f}  r(T,Y)={r(mentorship,job_score):.3f}")
+ax1.text2D(0.5, -0.04, bal, transform=ax1.transAxes, ha='center',
+           color='#aaaacc', fontsize=7.5, fontfamily='monospace')
+
+# ── PANEL 2: Ideal teaching ───────────────────────────────────────────────────
+ax2 = axes[1]
+
+# Surface through orb centroid — bisects every orb perfectly
+surf2, ring2, e1_i = make_surface(norm_vec, orb_centroid, disc_r)
+ax2.plot_surface(*surf2, alpha=0.18, color='#b0bec5', linewidth=0)
+ax2.plot(ring2[:,0], ring2[:,1], ring2[:,2], color='#90a4ae', lw=1.5, alpha=0.8)
+ax2.text(*(orb_centroid + norm_vec*disc_r*0.7 + e1_i*disc_r*0.55), 'Mentorship →', color='#80cbc4', fontsize=8, fontfamily='monospace', fontweight='bold')
+ax2.text(*(orb_centroid - norm_vec*disc_r*0.7 + e1_i*disc_r*0.55), '← Control',   color='#ef9a9a', fontsize=8, fontfamily='monospace', fontweight='bold')
+
+style_ax(ax2,
+    'Ideal (teaching)\n'
+    'No students · Surface bisects every orb · Perfect balance shown')
+
+ax2.text2D(0.5, -0.04,
+    'Surface bisects all orbs → treatment uncorrelated with every variable',
+    transform=ax2.transAxes, ha='center', color='#aaaacc', fontsize=7.5, fontfamily='monospace')
+
+fig.suptitle(
+    f'Mentorship RCT  ·  Y = b₀ + b₁·internship + b₂·GPA + b₃·income  '
+    f'(R²={R2:.3f},  3 PCs={sum(var_exp[:3]):.0%})\n'
+    f'Orb size = partial R²  ·  X₁ & X₃ overlap = multicollinearity  ·  '
+    f'Ŷ inside Y = model fit  ·  e = residual',
+    color='white', fontsize=10, y=1.01)
 
 plt.tight_layout()
 plt.savefig('regression_vectors.png', dpi=150, bbox_inches='tight', facecolor='#0e0e1a')
