@@ -9,7 +9,6 @@ We embed them in R^3 preserving:
 Then OLS projection = drop Y perpendicularly onto the plane of X1 & X2.
 """
 
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -94,13 +93,15 @@ def arrow(v, color, lw=2.5, ls='-'):
               color=color, linewidth=lw, linestyle=ls,
               arrow_length_ratio=0.12)
 
-# --- helper: draw a transparent sphere at tip of v ---------------------
-def orb(v, color, alpha=0.18, scale=0.9):
-    u, w = np.mgrid[0:2*np.pi:30j, 0:np.pi:20j]
-    r = np.linalg.norm(v) * scale * 0.28        # radius = fraction of length
-    xs = v[0] + r * np.cos(u) * np.sin(w)
-    ys = v[1] + r * np.sin(u) * np.sin(w)
-    zs = v[2] + r * np.cos(w)
+# --- helper: draw a transparent sphere centred at the ORIGIN -----------
+# radius = std dev of the variable (= length of its vector)
+# All vectors emanate from origin, so orbs overlap wherever variables correlate.
+def orb(std_dev, color, alpha=0.13):
+    u, w = np.mgrid[0:2*np.pi:35j, 0:np.pi:25j]
+    r = std_dev
+    xs = r * np.cos(u) * np.sin(w)
+    ys = r * np.sin(u) * np.sin(w)
+    zs = r * np.cos(w)
     ax.plot_surface(xs, ys, zs, color=color, alpha=alpha, linewidth=0)
 
 # --- regression plane (spanned by e1, e2) ------------------------------
@@ -135,11 +136,12 @@ corner_pts = np.array([p1, p1 + perp_b, p2])
 ax.plot(corner_pts[:,0], corner_pts[:,1], corner_pts[:,2],
         color='#ef5350', linewidth=1, alpha=0.7)
 
-# --- orbs at vector tips ------------------------------------------------
-orb(v1,  '#4fc3f7', alpha=0.22)
-orb(v2,  '#81c784', alpha=0.22)
-orb(vY,  '#fff176', alpha=0.22)
-orb(vY_hat, '#ffb74d', alpha=0.15)
+# --- orbs centred at origin, radius = std dev ---------------------------
+# Overlap between orbs = shared variance = correlation between variables.
+# Draw Y last so it renders on top (most visible).
+orb(s1, '#4fc3f7', alpha=0.13)   # X1 internship
+orb(s2, '#81c784', alpha=0.13)   # X2 GPA
+orb(sy, '#fff176', alpha=0.10)   # Y  job score (largest, outermost)
 
 # --- labels -------------------------------------------------------------
 def label(v, txt, color, offset=(0.05, 0.05, 0.05)):
