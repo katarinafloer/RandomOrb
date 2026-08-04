@@ -9,10 +9,11 @@ VARIABLES (5 orbs):
   Y  = job score (outcome)
   Ŷ  = OLS fitted values
 
-ORB SIZE = standard deviation of that variable.
-  In OLS vector geometry, each centered variable IS a vector in R^n
-  whose length = std dev × √n.  A larger orb means that variable has more
-  spread across students — more "reach" to explain Y.
+ORB SIZE = partial R² of that variable (for X1/X2/X3) or R² (for Ŷ).
+  Partial R² is unit-free: it measures how much of Y's variance each
+  variable uniquely explains after controlling for the others.
+  All X orbs overlap with Y's orb — that's what correlation looks like.
+  More overlap = stronger relationship with Y.
 
 ORB POSITION = direction in PCA space (biplot).
   Angle between two arrows ≈ arccos(correlation between those variables).
@@ -106,23 +107,44 @@ var_pts  = {nm: L * var_raw[i] / var_norm for i, nm in enumerate(names)}
 p1=var_pts['X1']; p2=var_pts['X2']; p3=var_pts['X3']
 pY=var_pts['Y'];  pYh=var_pts['Yh']
 
-# ── 5. ORB SIZES = std dev of each variable ───────────────────────────────────
-# In OLS vector geometry, vector length = std dev × √n.
-# We map std devs to a display radius range so all orbs are visible.
-stds = {
-    'X1' : internship.std(),
-    'X2' : GPA.std(),
-    'X3' : parental_income.std(),
-    'Y'  : job_score.std(),
-    'Yh' : Y_hat.std(),
+# ── 5. ORB SIZES = partial R² (unit-free importance measure) ─────────────────
+# partial R² measures how much of Y's variance each variable uniquely explains.
+# R² of the full model is used for Ŷ.
+# All radii are set large enough that every X orb overlaps with Y's orb,
+# because every X in the regression must correlate with Y to be included.
+#
+# Minimum radius guarantee: for orbs at tips of arrows (length L) with angle θ
+# between them, the tips are distance 2L·sin(θ/2) apart. For overlap we need
+# R_i + R_Y > 2L·sin(θ/2). We compute this for each variable vs Y.
+
+importance = {
+    'X1': pR2['X1'],
+    'X2': pR2['X2'],
+    'X3': pR2['X3'],
+    'Y' : 1.0,           # outcome itself
+    'Yh': R2,            # fitted values explain R² of Y
 }
-std_vals   = np.array([stds[nm] for nm in names])
-R_min, R_max = 0.7, 2.2
-R_orbs = R_min + (std_vals - std_vals.min()) / (std_vals.max() - std_vals.min()) * (R_max - R_min)
-orb_r  = dict(zip(names, R_orbs))
-print("\nOrb radii (proportional to std dev):")
+
+# Scale importance values to a radius range [R_base, R_top]
+R_base, R_top = 1.2, 2.8
+imp_vals = np.array([importance[nm] for nm in names])
+R_orbs   = R_base + (imp_vals / imp_vals.max()) * (R_top - R_base)
+
+# Enforce overlap: each X orb must reach Y's orb
+R_Y = R_orbs[names.index('Y')]
+for i, nm in enumerate(names):
+    if nm in ('Y', 'Yh'):
+        continue
+    pt = var_pts[nm]
+    dist_to_Y = float(np.linalg.norm(pt - pY))
+    min_r = max(0.5, dist_to_Y - R_Y + 0.4)   # 0.4 = guaranteed visible overlap
+    if R_orbs[i] < min_r:
+        R_orbs[i] = min_r
+
+orb_r = dict(zip(names, R_orbs))
+print("\nOrb radii (partial R² + overlap guarantee):")
 for nm in names:
-    print(f"  {nm}: std={stds[nm]:.2f}  →  radius={orb_r[nm]:.2f}")
+    print(f"  {nm}: importance={importance[nm]:.3f}  →  radius={orb_r[nm]:.2f}")
 
 # ── 6. RANDOMIZATION SURFACE ──────────────────────────────────────────────────
 # Best-fit plane through all 5 orb centers — the plane that passes through
@@ -137,7 +159,7 @@ arb = np.array([0,1,0]) if abs(norm_vec[1]) < 0.9 else np.array([1,0,0])
 f1  = arb - np.dot(arb, norm_vec)*norm_vec;  f1 /= np.linalg.norm(f1)
 f2  = np.cross(norm_vec, f1);                f2 /= np.linalg.norm(f2)
 
-disc_r     = R_max * 3.5
+disc_r     = R_top * 3.5
 rhos, phis = np.linspace(0, disc_r, 35), np.linspace(0, 2*np.pi, 70)
 RHO, PHI   = np.meshgrid(rhos, phis)
 warp       = 0.3 * np.cos(2*PHI) * (RHO/disc_r)
@@ -180,25 +202,25 @@ ring  = (mid + disc_r*(np.outer(np.cos(phi_r),f1) + np.outer(np.sin(phi_r),f2))
          + np.outer(0.3*np.cos(2*phi_r), norm_vec))
 ax.plot(ring[:,0], ring[:,1], ring[:,2], color='#90a4ae', lw=1.8, alpha=0.9)
 
-ax.text(*(mid + norm_vec*R_max*1.8 + f1*disc_r*0.55),
+ax.text(*(mid + norm_vec*R_top*1.8 + f1*disc_r*0.55),
         'MENTORSHIP\n(Treatment)', color='#80cbc4', fontsize=9,
         fontfamily='monospace', fontweight='bold')
-ax.text(*(mid - norm_vec*R_max*1.8 + f1*disc_r*0.55),
+ax.text(*(mid - norm_vec*R_top*1.8 + f1*disc_r*0.55),
         'NO MENTORSHIP\n(Control)', color='#ef9a9a', fontsize=9,
         fontfamily='monospace', fontweight='bold')
 
 # Labels — show std dev and partial R² where available
 off = 0.25
-ax.text(*(p1+off), f'X₁  Internship\n    σ={stds["X1"]:.2f}  pR²={pR2["X1"]:.2f}',
-        color='#4fc3f7', fontsize=8.5, fontweight='bold', fontfamily='monospace')
-ax.text(*(p2+off), f'X₂  GPA\n    σ={stds["X2"]:.2f}  pR²={pR2["X2"]:.2f}',
-        color='#81c784', fontsize=8.5, fontweight='bold', fontfamily='monospace')
-ax.text(*(p3+off), f'X₃  Parental $\n    σ={stds["X3"]:.0f}  pR²={pR2["X3"]:.2f}',
-        color='#ce93d8', fontsize=8.5, fontweight='bold', fontfamily='monospace')
-ax.text(*(pY+off), f'Y   Job Score\n    σ={stds["Y"]:.1f}',
-        color='#fff176', fontsize=8.5, fontweight='bold', fontfamily='monospace')
-ax.text(*(pYh - np.array([0,0,0.8])), f'Ŷ   fitted\n    σ={stds["Yh"]:.1f}',
-        color='#ffb74d', fontsize=8, fontfamily='monospace')
+ax.text(*(p1+off), f'X₁  Internship\n    pR²={pR2["X1"]:.2f}',
+        color='#4fc3f7', fontsize=9, fontweight='bold', fontfamily='monospace')
+ax.text(*(p2+off), f'X₂  GPA\n    pR²={pR2["X2"]:.2f}',
+        color='#81c784', fontsize=9, fontweight='bold', fontfamily='monospace')
+ax.text(*(p3+off), f'X₃  Parental $\n    pR²={pR2["X3"]:.2f}',
+        color='#ce93d8', fontsize=9, fontweight='bold', fontfamily='monospace')
+ax.text(*(pY+off), f'Y   Job Score',
+        color='#fff176', fontsize=9, fontweight='bold', fontfamily='monospace')
+ax.text(*(pYh - np.array([0,0,0.8])), f'Ŷ   fitted  (R²={R2:.2f})',
+        color='#ffb74d', fontsize=8.5, fontfamily='monospace')
 ax.text(*(pYh + res*0.55), 'e', color='#ef5350', fontsize=9, fontfamily='monospace')
 
 # Styling
