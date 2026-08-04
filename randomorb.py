@@ -196,11 +196,14 @@ ax.plot_surface(PX, PY_p, PZ, alpha=0.08, color='#4466dd', linewidth=0)
 ax.plot_wireframe(PX, PY_p, PZ, alpha=0.06, color='#6688ff', linewidth=0.4)
 
 
-# --- three variable orbs -----------------------------------------------
-# Draw Y first so X1 and X2 render in front of it
-orb(pY, '#fff176', alpha=0.12)   # Y  job score  — yellow
-orb(p2, '#81c784', alpha=0.14)   # X2 GPA        — green
-orb(p1, '#4fc3f7', alpha=0.14)   # X1 internship — blue
+# --- four variable orbs ------------------------------------------------
+# Each variable gets its own orb centred at its vector tip.
+# Y and Ŷ will nearly overlap because R²=0.982 — their vectors point in
+# almost the same direction. The small gap between them IS the residual.
+orb(pY,  '#fff176', alpha=0.12)   # Y  job score      — yellow
+orb(pYh, '#ffb74d', alpha=0.12)   # Ŷ  fitted values  — orange (almost same spot as Y)
+orb(p2,  '#81c784', alpha=0.14)   # X2 GPA            — green
+orb(p1,  '#4fc3f7', alpha=0.14)   # X1 internship     — blue
 
 
 # --- variable arrows ----------------------------------------------------
