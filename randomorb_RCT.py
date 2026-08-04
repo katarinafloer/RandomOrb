@@ -94,8 +94,12 @@ for label, var in [('internship', internship), ('GPA', GPA),
                    ('income', parental_income), ('job score', job_score)]:
     print(f"  r(mentorship, {label:10s}) = {r(mentorship, var):.3f}")
 
-# ── 4. BIPLOT SVD ─────────────────────────────────────────────────────────────
-X_data = np.column_stack([internship, GPA, parental_income, job_score, Y_hat])
+# ── 4. BIPLOT SVD — include mentorship so its direction is properly encoded ────
+# Including mentorship ensures the treatment direction sits in the same PC space
+# as the regression variables. Because r(T, all vars) ≈ 0, the mentorship arrow
+# is nearly orthogonal to all variable arrows → surface cuts each orb at ~50/50,
+# with small deviations proportional to the actual (small) imbalances.
+X_data = np.column_stack([internship, GPA, parental_income, job_score, Y_hat, mentorship])
 X_std  = (X_data - X_data.mean(axis=0)) / X_data.std(axis=0)
 U_b, S_b, Vt_b = np.linalg.svd(X_std, full_matrices=False)
 var_exp = (S_b**2) / np.sum(S_b**2)
@@ -103,12 +107,19 @@ print(f"\nBiplot: 3 PCs = {sum(var_exp[:3]):.1%} of structure")
 
 # Variable arrow positions (all normalized to same display length L)
 L = 3.5
-var_raw  = Vt_b[:3, :].T                          # (5, 3)
+var_raw  = Vt_b[:3, :].T                          # (6, 3)
 var_norm = max(np.linalg.norm(v) for v in var_raw)
-names    = ['X1','X2','X3','Y','Yh']
-var_pts  = {nm: L * var_raw[i] / var_norm for i, nm in enumerate(names)}
+names6   = ['X1','X2','X3','Y','Yh','T']
+var_pts6 = {nm: L * var_raw[i] / var_norm for i, nm in enumerate(names6)}
+
+# Regression orbs use the first 5 variables only
+names   = ['X1','X2','X3','Y','Yh']
+var_pts = {nm: var_pts6[nm] for nm in names}
 p1=var_pts['X1']; p2=var_pts['X2']; p3=var_pts['X3']
 pY=var_pts['Y'];  pYh=var_pts['Yh']
+
+# Mentorship direction from the biplot (properly placed in PC space)
+ment_dir_biplot = var_pts6['T'] / np.linalg.norm(var_pts6['T'])
 
 # ── 5. ORB SIZES = partial R² (unit-free importance measure) ─────────────────
 # partial R² measures how much of Y's variance each variable uniquely explains.
@@ -194,10 +205,25 @@ stu_raw  = U_b[:, :3] * S_b[:3]
 stu_norm = max(np.linalg.norm(s) for s in stu_raw)
 stu_pts  = stu_raw / stu_norm * L * 0.55   # scaled to sit near orb cluster
 
-# Real surface: origin-centred, normal = actual mentorship direction in biplot
-ment_c   = mentorship - mentorship.mean()
-ment_dir = U_b[:, :3].T @ ment_c
-ment_dir = ment_dir / np.linalg.norm(ment_dir)
+vars_for_balance = {'X1': internship, 'X2': GPA, 'X3': parental_income,
+                    'Y': job_score, 'Yh': Y_hat}
+r_bal = {nm: r(mentorship, vars_for_balance[nm]) for nm in names}
+
+# Real surface: mentorship biplot direction + centroid placement.
+# Because mentorship was included in the 6-variable SVD, ment_dir_biplot is
+# properly represented in PC space and nearly orthogonal to balanced variables.
+ment_dir_use = ment_dir_biplot
+real_centre  = orb_centroid
+
+print(f"\nReal surface: biplot direction (6-variable SVD)")
+for nm in names:
+    delta = float(np.dot(ment_dir_use, var_pts[nm] - orb_centroid))
+    R_i   = orb_r[nm]
+    if abs(delta) < R_i:
+        frac = (R_i+delta)**2 * (2*R_i-delta) / (4*R_i**3)
+    else:
+        frac = 1.0 if delta > 0 else 0.0
+    print(f"  {nm}: r(T,var)={r_bal[nm]:.3f}  δ/R={delta/R_i:.2f}  frac_in_T≈{frac:.2f}")
 
 def make_surface(normal, centre, radius, warp_amp=0.3):
     arb = np.array([0,1,0]) if abs(normal[1]) < 0.9 else np.array([1,0,0])
@@ -270,16 +296,16 @@ for i, (pt, t) in enumerate(zip(stu_pts, mentorship)):
     col = '#80cbc4' if t else '#ef9a9a'
     ax1.scatter(*pt, color=col, s=25, zorder=5, edgecolors='none', alpha=0.8)
 
-# Surface through origin, normal = actual mentorship direction
-surf1, ring1, e1_r = make_surface(ment_dir, np.zeros(3), disc_r)
+# Surface positioned to cut each orb proportionally to actual T/C balance
+surf1, ring1, e1_r = make_surface(ment_dir_use, real_centre, disc_r)
 ax1.plot_surface(*surf1, alpha=0.18, color='#b0bec5', linewidth=0)
 ax1.plot(ring1[:,0], ring1[:,1], ring1[:,2], color='#90a4ae', lw=1.5, alpha=0.8)
-ax1.text(*(ment_dir*disc_r*0.7 + e1_r*disc_r*0.55), 'Mentorship →', color='#80cbc4', fontsize=8, fontfamily='monospace', fontweight='bold')
-ax1.text(*(-ment_dir*disc_r*0.7 + e1_r*disc_r*0.55), '← Control',   color='#ef9a9a', fontsize=8, fontfamily='monospace', fontweight='bold')
+ax1.text(*(real_centre + ment_dir_use*disc_r*0.7 + e1_r*disc_r*0.55), 'Mentorship →', color='#80cbc4', fontsize=8, fontfamily='monospace', fontweight='bold')
+ax1.text(*(real_centre - ment_dir_use*disc_r*0.7 + e1_r*disc_r*0.55), '← Control',   color='#ef9a9a', fontsize=8, fontfamily='monospace', fontweight='bold')
 
 style_ax(ax1,
     f'Real study  (n={n})\n'
-    f'Students shown · Surface through origin · Actual balance')
+    f'Students shown · Surface cut ∝ actual T/C balance')
 
 # Balance stats
 bal = (f"r(T,X₁)={r(mentorship,internship):.3f}  r(T,X₂)={r(mentorship,GPA):.3f}  "
